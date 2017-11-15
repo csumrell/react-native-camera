@@ -165,23 +165,7 @@ public class RCTCameraModule extends ReactContextBaseJavaModule
             private Map<String, Object> getBarCodeConstants() {
                 return Collections.unmodifiableMap(new HashMap<String, Object>() {
                     {
-                        put("aztec", "AZTEC");
-                        put("codabar", "CODABAR");
-                        put("code128", "CODE_128");
-                        put("code93", "CODE_93");
-                        put("code39", "CODE_39");
-                        put("datamatrix", "DATA_MATRIX");
-                        put("ean13", "EAN_13");
-                        put("ean8", "EAN_8");
-                        put("itf14", "ITF");
-                        put("maxicode", "MAXICODE");
-                        put("pdf417", "PDF_417");
-                        put("qr", "QR_CODE");
-                        put("rss14", "RSS_14");
-                        put("rss", "RSS_EXPANDED");
-                        put("upca", "UPC_A");
-                        put("upce", "UPC_E");
-                        put("upc", "UPC_EAN_EXTENSION");
+                        // @TODO add barcode types
                     }
                 });
             }
@@ -518,7 +502,7 @@ public class RCTCameraModule extends ReactContextBaseJavaModule
     }
 
     private void captureWithOrientation(final ReadableMap options, final Promise promise, int deviceOrientation) {
-        Camera camera = RCTCamera.getInstance().acquireCameraInstance(options.getInt("type"));
+        final Camera camera = RCTCamera.getInstance().acquireCameraInstance(options.getInt("type"));
         if (null == camera) {
             promise.reject("No camera found.");
             return;
@@ -560,9 +544,21 @@ public class RCTCameraModule extends ReactContextBaseJavaModule
             }
         };
 
+        Camera.ShutterCallback shutterCallback = new Camera.ShutterCallback() {
+            @Override
+            public void onShutter() {
+                try {
+                    camera.setPreviewCallback(null);
+                    camera.setPreviewTexture(null);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+
         if(mSafeToCapture) {
           try {
-            camera.takePicture(null, null, captureCallback);
+            camera.takePicture(shutterCallback, null, captureCallback);
             mSafeToCapture = false;
           } catch(RuntimeException ex) {
               Log.e(TAG, "Couldn't capture photo.", ex);

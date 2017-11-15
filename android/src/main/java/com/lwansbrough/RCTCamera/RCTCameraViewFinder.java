@@ -300,49 +300,63 @@ class RCTCameraViewFinder extends TextureView implements TextureView.SurfaceText
             this.imageData = imageData;
         }
 
+        private Result getBarcode(int width, int height) {
+            try{
+              PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(imageData, width, height, 0, 0, width, height, false);
+              BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
+              return _multiFormatReader.decodeWithState(bitmap);
+            } catch (Throwable t) {
+                // meh
+            } finally {
+                _multiFormatReader.reset();
+            }
+            return null;
+        }
+
+        private Result getBarcodeAnyOrientation() {
+            Camera.Size size = camera.getParameters().getPreviewSize();
+
+            int width = size.width;
+            int height = size.height;
+            Result result = getBarcode(width, height);
+            if (result != null)
+              return result;
+
+            rotateImage(width, height);
+            width = size.height;
+            height = size.width;
+
+            return getBarcode(width, height);
+        }
+
+        private void rotateImage(int width, int height) {
+            byte[] rotated = new byte[imageData.length];
+            for (int y = 0; y < height; y++) {
+              for (int x = 0; x < width; x++) {
+                rotated[x * height + height - y - 1] = imageData[x + y * width];
+              }
+            }
+            imageData = rotated;
+        }
+
         @Override
         protected Void doInBackground(Void... ignored) {
             if (isCancelled()) {
                 return null;
             }
 
-            Camera.Size size = camera.getParameters().getPreviewSize();
-            int x = 0;
-            int y = 0;
-            int width = size.width;
-            int height = size.height;
-
-            // If using a barcode finder, limit the search area
-            if ( RCTCamera.getInstance().barcodeFinderVisible() ){
-                x = (width/2) - ((int)RCTCamera.getInstance().barcodeFinderWidth()/2);
-                y = (height/2) - ((int)RCTCamera.getInstance().barcodeFinderHeight()/2);
-                width = (int)RCTCamera.getInstance().barcodeFinderWidth();
-                height = (int)RCTCamera.getInstance().barcodeFinderHeight();
-            }
-
-            // rotate for zxing if orientation is portrait
-            if (RCTCamera.getInstance().getActualDeviceOrientation() == 0) {
-                byte[] rotated = new byte[imageData.length];
-                for (int ypos = y; ypos < height; ypos++) {
-                    for (int xpos = x; xpos < width; xpos++) {
-                        rotated[xpos * height + height - ypos - 1] = imageData[xpos + ypos * width];
-                    }
-                }
-                int tmp = width;
-                width = height;
-                height = tmp;
-                imageData = rotated;
-            }
-
             try {
-                PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(imageData, width, height, x, y, width, height, false);
-                BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
-                Result result = _multiFormatReader.decodeWithState(bitmap);
+                // rotate for zxing if orientation is portrait
+                Result result = getBarcodeAnyOrientation();
+                if (result == null){
+                    throw new Exception();
+                }
 
                 ReactContext reactContext = RCTCameraModule.getReactContextSingleton();
                 WritableMap event = Arguments.createMap();
                 WritableArray resultPoints = Arguments.createArray();
                 ResultPoint[] points = result.getResultPoints();
+                
                 if(points != null) {
                     for (ResultPoint point : points) {
                         WritableMap newPoint = Arguments.createMap();
@@ -351,7 +365,7 @@ class RCTCameraViewFinder extends TextureView implements TextureView.SurfaceText
                         resultPoints.pushMap(newPoint);
                     }
                 }
-
+                
                 event.putArray("bounds", resultPoints);
                 event.putString("data", result.getText());
                 event.putString("type", result.getBarcodeFormat().toString());
